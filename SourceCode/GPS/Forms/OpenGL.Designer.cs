@@ -107,6 +107,7 @@ namespace AgOpenGPS
 
                     #region World and Grid
 
+                    worldGrid.LocalPlane = AppModel.LocalPlane;
                     worldGrid.DrawFieldSurface(fieldColor, camera.ZoomValue, isTextureOn);
 
                     if (isGridOn) worldGrid.DrawWorldGrid(worldGridColor);

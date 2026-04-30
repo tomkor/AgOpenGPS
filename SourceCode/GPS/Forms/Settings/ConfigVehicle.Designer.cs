@@ -42,6 +42,8 @@ namespace AgOpenGPS
 
             Properties.Settings.Default.setDisplay_isBrightnessOn = mf.isBrightnessOn;
             Properties.Settings.Default.setDisplay_isTextureOn = mf.isTextureOn;
+            Properties.Settings.Default.setMap_showLiveInNavigation = chkDisplayLiveMap.Checked;
+            Properties.Settings.Default.setMap_liveDefaultsApplied = true;
             Properties.Settings.Default.setMenu_isGridOn = mf.isGridOn;
 
             Properties.Settings.Default.setDisplay_isSvennArrowOn = mf.isSvennArrowOn;
@@ -68,6 +70,7 @@ namespace AgOpenGPS
             Properties.VehicleSettings.Default.Save();
             Properties.ToolSettings.Default.Save();
             Properties.Settings.Default.Save();
+            mf.ConfigureLiveTileMap();
         }
 
         #endregion

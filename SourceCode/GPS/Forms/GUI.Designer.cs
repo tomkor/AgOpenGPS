@@ -524,6 +524,7 @@ namespace AgOpenGPS
             }
 
             isTextureOn = Settings.Default.setDisplay_isTextureOn;
+            ConfigureLiveTileMap();
             isLogElevation = Settings.Default.setDisplay_isLogElevation;
             isLineSmooth = Properties.Settings.Default.setDisplay_isLineSmooth;
 
@@ -788,6 +789,38 @@ namespace AgOpenGPS
             }
 
             //jumpDistanceAlarm = Settings.Default.setGPS_jumpFixAlarmDistance;
+        }
+
+        public void ConfigureLiveTileMap()
+        {
+            ApplyLiveTileMapDefaultsOnce();
+
+            int sourceIndex = Settings.Default.setMap_tileSource;
+            if (sourceIndex < 0 || sourceIndex > 2)
+            {
+                sourceIndex = 2;
+            }
+
+            worldGrid.LiveTileMapOptions = new LiveTileMapOptions(
+                Settings.Default.setMap_showLiveInNavigation,
+                (LiveTileMapSource)sourceIndex,
+                Settings.Default.setMap_enableParcelsWms);
+            worldGrid.LocalPlane = AppModel.LocalPlane;
+            Log.EventWriter($"Live map configured enabled={Settings.Default.setMap_showLiveInNavigation} source={(LiveTileMapSource)sourceIndex} parcels={Settings.Default.setMap_enableParcelsWms}");
+        }
+
+        private void ApplyLiveTileMapDefaultsOnce()
+        {
+            if (Settings.Default.setMap_liveDefaultsApplied)
+            {
+                return;
+            }
+
+            Settings.Default.setMap_tileSource = 2;
+            Settings.Default.setMap_enableParcelsWms = true;
+            Settings.Default.setMap_showLiveInNavigation = true;
+            Settings.Default.setMap_liveDefaultsApplied = true;
+            Settings.Default.Save();
         }
 
         public void PanelUpdateRightAndBottom()

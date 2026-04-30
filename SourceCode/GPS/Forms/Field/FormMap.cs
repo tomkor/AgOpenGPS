@@ -30,6 +30,10 @@ namespace AgOpenGPS
         private GMapOverlay overlay = new GMapOverlay();
         private Point lastMouseLocation;
         private bool isColorMap = true;
+        private ComboBox cboxTileSource;
+        private CheckBox cboxParcelsWms;
+        private CheckBox cboxLiveNavigationMap;
+        private bool isInitializingTileControls;
 
         public FormMap(Form callingForm)
         {
@@ -44,9 +48,12 @@ namespace AgOpenGPS
             lblPoints.Text = gStr.gsPoints + ":";
             labelBackground.Text = gStr.gsBackground;
 
-            gMapControl.MapProvider = GMapProviders.BingHybridMap;
+            gMapControl.MapProvider = TileMapProviderFactory.GetProvider(TileMapSource.OpenStreetMap, false);
             gMapControl.ShowCenter = false;
             gMapControl.DragButton = MouseButtons.Left;
+            GMaps.Instance.Mode = AccessMode.ServerAndCache;
+
+            InitializeTileLayerControls();
 
             polygon = new GMapPolygon(new List<PointLatLng>(), "bingLine")
             {
@@ -61,7 +68,33 @@ namespace AgOpenGPS
         {
             Size = Properties.Settings.Default.setWindow_BingMapSize;
 
-            gMapControl.Zoom = Properties.Settings.Default.setWindow_BingZoom;
+            if (!Properties.Settings.Default.setMap_liveDefaultsApplied)
+            {
+                Properties.Settings.Default.setMap_tileSource = 2;
+                Properties.Settings.Default.setMap_enableParcelsWms = true;
+                Properties.Settings.Default.setMap_showLiveInNavigation = true;
+                Properties.Settings.Default.setMap_liveDefaultsApplied = true;
+                Properties.Settings.Default.Save();
+            }
+
+            int selectedSource = Properties.Settings.Default.setMap_tileSource;
+            if (selectedSource < 0 || selectedSource > 2)
+            {
+                selectedSource = 2;
+            }
+
+            isInitializingTileControls = true;
+            cboxTileSource.SelectedIndex = selectedSource;
+            cboxParcelsWms.Checked = Properties.Settings.Default.setMap_enableParcelsWms;
+            cboxLiveNavigationMap.Checked = Properties.Settings.Default.setMap_showLiveInNavigation;
+            isInitializingTileControls = false;
+
+            ApplySelectedMapProvider();
+
+            int zoom = Properties.Settings.Default.setWindow_BingZoom;
+            if (zoom < gMapControl.MinZoom) zoom = (int)gMapControl.MinZoom;
+            if (zoom > gMapControl.MaxZoom) zoom = (int)gMapControl.MaxZoom;
+            gMapControl.Zoom = zoom;
             gMapControl.Position = new PointLatLng(
                 mf.AppModel.CurrentLatLon.Latitude,
                 mf.AppModel.CurrentLatLon.Longitude);
@@ -89,7 +122,12 @@ namespace AgOpenGPS
             }
             Properties.Settings.Default.setWindow_BingMapSize = Size;
             Properties.Settings.Default.setWindow_BingZoom = (int)gMapControl.Zoom;
+            Properties.Settings.Default.setMap_tileSource = cboxTileSource.SelectedIndex;
+            Properties.Settings.Default.setMap_enableParcelsWms = cboxParcelsWms.Checked;
+            Properties.Settings.Default.setMap_showLiveInNavigation = cboxLiveNavigationMap.Checked;
+            Properties.Settings.Default.setMap_liveDefaultsApplied = true;
             Properties.Settings.Default.Save();
+            mf.ConfigureLiveTileMap();
         }
 
         private void btnExit_Click(object sender, EventArgs e)
@@ -363,9 +401,111 @@ namespace AgOpenGPS
         {
             int zoom = (int)gMapControl.Zoom;
             zoom++;
-            if (zoom > 19) zoom = 19;
+            if (zoom > gMapControl.MaxZoom) zoom = (int)gMapControl.MaxZoom;
             gMapControl.Zoom = zoom;//mapControl
             UpdateWindowTitle();
+        }
+
+        private void InitializeTileLayerControls()
+        {
+            cboxTileSource = new ComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Width = 210,
+                Anchor = AnchorStyles.Top,
+                Margin = new Padding(8, 4, 8, 2),
+            };
+            cboxTileSource.Items.AddRange(new object[]
+            {
+                "OpenStreetMap",
+                "Esri World Imagery",
+                "Geoportal Orto",
+            });
+            cboxTileSource.SelectedIndexChanged += TileControls_Changed;
+
+            cboxParcelsWms = new CheckBox
+            {
+                AutoSize = false,
+                Width = 210,
+                Text = "Dzialki (WMS)",
+                Anchor = AnchorStyles.Top,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Margin = new Padding(8, 2, 8, 2),
+            };
+            cboxParcelsWms.CheckedChanged += TileControls_Changed;
+
+            cboxLiveNavigationMap = new CheckBox
+            {
+                AutoSize = false,
+                Width = 210,
+                Text = "Mapa w nawigacji",
+                Anchor = AnchorStyles.Top,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Margin = new Padding(8, 2, 8, 2),
+            };
+            cboxLiveNavigationMap.CheckedChanged += TileControls_Changed;
+
+            Label lblSource = new Label
+            {
+                AutoSize = false,
+                Width = 210,
+                Height = 20,
+                Text = "Zrodlo mapy:",
+                Anchor = AnchorStyles.Top,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Margin = new Padding(8, 2, 8, 2),
+            };
+
+            FlowLayoutPanel tilePanel = new FlowLayoutPanel
+            {
+                AutoSize = false,
+                Width = 230,
+                Height = 112,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                BackColor = Color.Transparent,
+                Anchor = AnchorStyles.Top,
+                Margin = new Padding(4, 2, 4, 2),
+            };
+            tilePanel.Controls.Add(lblSource);
+            tilePanel.Controls.Add(cboxTileSource);
+            tilePanel.Controls.Add(cboxParcelsWms);
+            tilePanel.Controls.Add(cboxLiveNavigationMap);
+
+            tableLayoutPanel1.Controls.Add(tilePanel, 0, 5);
+            tableLayoutPanel1.SetColumnSpan(tilePanel, 3);
+            tilePanel.BringToFront();
+        }
+
+        private void TileControls_Changed(object sender, EventArgs e)
+        {
+            if (isInitializingTileControls)
+            {
+                return;
+            }
+
+            ApplySelectedMapProvider();
+        }
+
+        private void ApplySelectedMapProvider()
+        {
+            int sourceIndex = cboxTileSource.SelectedIndex;
+            if (sourceIndex < 0)
+            {
+                sourceIndex = 2;
+            }
+
+            TileMapSource source = (TileMapSource)sourceIndex;
+            bool withParcelsOverlay = cboxParcelsWms.Checked;
+            gMapControl.MaxZoom = source == TileMapSource.GeoportalOrtho ? 20 : 19;
+            gMapControl.MapProvider = TileMapProviderFactory.GetProvider(source, withParcelsOverlay);
+            gMapControl.ReloadMap();
+
+            Properties.Settings.Default.setMap_tileSource = sourceIndex;
+            Properties.Settings.Default.setMap_enableParcelsWms = withParcelsOverlay;
+            Properties.Settings.Default.setMap_showLiveInNavigation = cboxLiveNavigationMap.Checked;
+            Properties.Settings.Default.setMap_liveDefaultsApplied = true;
+            mf.ConfigureLiveTileMap();
         }
 
         private void timer1_Tick(object sender, EventArgs e)

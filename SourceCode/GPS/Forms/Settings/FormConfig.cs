@@ -236,6 +236,7 @@ namespace AgOpenGPS
             labelPolyOnOff.Text = gStr.gsPolygons;
             labelBrightnessOnOff.Text = gStr.gsBrightness;
             labelFieldTextureOnOff.Text = gStr.gsFieldTexture;
+            labelLiveMapOnOff.Text = "Mapa";
             labelLineSmoothOnOff.Text = gStr.gsLineSmooth;
             labelSpeedoOnOff.Text = gStr.gsSpeedo;
             labelSvenArrowOnOff.Text = gStr.gsSvennArrow;
@@ -375,6 +376,7 @@ namespace AgOpenGPS
         {
             chkDisplayBrightness.Checked = mf.isBrightnessOn;
             chkDisplayFloor.Checked = mf.isTextureOn;
+            chkDisplayLiveMap.Checked = Properties.Settings.Default.setMap_showLiveInNavigation;
             chkDisplayGrid.Checked = mf.isGridOn;
             chkDisplaySpeedo.Checked = mf.isSpeedoOn;
             chkDisplayStartFullScreen.Checked = Properties.Settings.Default.setDisplay_isStartFullScreen;

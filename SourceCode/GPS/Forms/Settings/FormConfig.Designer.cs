@@ -445,6 +445,8 @@ namespace AgOpenGPS
             this.tabDisplay = new System.Windows.Forms.TabPage();
             this.lblHeadlandDist = new System.Windows.Forms.Label();
             this.chkboxHeadlandDist = new System.Windows.Forms.CheckBox();
+            this.labelLiveMapOnOff = new System.Windows.Forms.Label();
+            this.chkDisplayLiveMap = new System.Windows.Forms.CheckBox();
             this.labelLineSmoothOnOff = new System.Windows.Forms.Label();
             this.labelSectionLinesOnOff = new System.Windows.Forms.Label();
             this.labelDirectionMarkOnOff = new System.Windows.Forms.Label();
@@ -7906,6 +7908,8 @@ namespace AgOpenGPS
             this.tabDisplay.BackColor = System.Drawing.Color.WhiteSmoke;
             this.tabDisplay.Controls.Add(this.lblHeadlandDist);
             this.tabDisplay.Controls.Add(this.chkboxHeadlandDist);
+            this.tabDisplay.Controls.Add(this.labelLiveMapOnOff);
+            this.tabDisplay.Controls.Add(this.chkDisplayLiveMap);
             this.tabDisplay.Controls.Add(this.labelLineSmoothOnOff);
             this.tabDisplay.Controls.Add(this.labelSectionLinesOnOff);
             this.tabDisplay.Controls.Add(this.labelDirectionMarkOnOff);
@@ -7974,6 +7978,40 @@ namespace AgOpenGPS
             this.chkboxHeadlandDist.TabIndex = 540;
             this.chkboxHeadlandDist.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
             this.chkboxHeadlandDist.UseVisualStyleBackColor = false;
+            // 
+            // labelLiveMapOnOff
+            // 
+            this.labelLiveMapOnOff.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.labelLiveMapOnOff.BackColor = System.Drawing.Color.Transparent;
+            this.labelLiveMapOnOff.ForeColor = System.Drawing.Color.Black;
+            this.labelLiveMapOnOff.Location = new System.Drawing.Point(665, 354);
+            this.labelLiveMapOnOff.Name = "labelLiveMapOnOff";
+            this.labelLiveMapOnOff.Size = new System.Drawing.Size(100, 16);
+            this.labelLiveMapOnOff.TabIndex = 543;
+            this.labelLiveMapOnOff.Text = "Mapa";
+            this.labelLiveMapOnOff.TextAlign = System.Drawing.ContentAlignment.TopCenter;
+            // 
+            // chkDisplayLiveMap
+            // 
+            this.chkDisplayLiveMap.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.chkDisplayLiveMap.Appearance = System.Windows.Forms.Appearance.Button;
+            this.chkDisplayLiveMap.BackColor = System.Drawing.Color.WhiteSmoke;
+            this.chkDisplayLiveMap.Checked = true;
+            this.chkDisplayLiveMap.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.chkDisplayLiveMap.FlatAppearance.BorderColor = System.Drawing.Color.Black;
+            this.chkDisplayLiveMap.FlatAppearance.BorderSize = 2;
+            this.chkDisplayLiveMap.FlatAppearance.CheckedBackColor = System.Drawing.Color.LightGreen;
+            this.chkDisplayLiveMap.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.chkDisplayLiveMap.Font = new System.Drawing.Font("Tahoma", 14.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.chkDisplayLiveMap.ForeColor = System.Drawing.SystemColors.ControlText;
+            this.chkDisplayLiveMap.Image = global::AgOpenGPS.Properties.Resources.MappingOn;
+            this.chkDisplayLiveMap.Location = new System.Drawing.Point(665, 282);
+            this.chkDisplayLiveMap.Name = "chkDisplayLiveMap";
+            this.chkDisplayLiveMap.RightToLeft = System.Windows.Forms.RightToLeft.Yes;
+            this.chkDisplayLiveMap.Size = new System.Drawing.Size(100, 69);
+            this.chkDisplayLiveMap.TabIndex = 542;
+            this.chkDisplayLiveMap.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
+            this.chkDisplayLiveMap.UseVisualStyleBackColor = false;
             // 
             // labelLineSmoothOnOff
             // 
@@ -9110,6 +9148,8 @@ namespace AgOpenGPS
         private System.Windows.Forms.CheckBox chkDisplayBrightness;
         private System.Windows.Forms.Label labelFieldTextureOnOff;
         private System.Windows.Forms.CheckBox chkDisplayFloor;
+        private System.Windows.Forms.Label labelLiveMapOnOff;
+        private System.Windows.Forms.CheckBox chkDisplayLiveMap;
         private System.Windows.Forms.Label labelPolyOnOff;
         private System.Windows.Forms.Label labelKeyboardOnOff;
         private System.Windows.Forms.Label labelFullscreenOnOff;

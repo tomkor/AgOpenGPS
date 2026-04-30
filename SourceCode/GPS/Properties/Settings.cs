@@ -31,6 +31,10 @@ namespace AgOpenGPS.Properties
         public Size setWindow_MapBndSize = new Size(1022, 742);
         public Size setWindow_BingMapSize = new Size(965, 700);
         public int setWindow_BingZoom = 15;
+        public int setMap_tileSource = 2; // 0=OSM, 1=Esri, 2=Geoportal
+        public bool setMap_enableParcelsWms = true;
+        public bool setMap_showLiveInNavigation = true;
+        public bool setMap_liveDefaultsApplied = false;
         public Point setWindow_QuickABLocation = new Point(100, 100);
         public Size setWindow_gridSize = new Size(400, 400);
         public Point setWindow_gridLocation = new Point(20, 20);
@@ -230,6 +234,10 @@ namespace AgOpenGPS.Properties
             dest.setWindow_MapBndSize = source.setWindow_MapBndSize;
             dest.setWindow_BingMapSize = source.setWindow_BingMapSize;
             dest.setWindow_BingZoom = source.setWindow_BingZoom;
+            dest.setMap_tileSource = source.setMap_tileSource;
+            dest.setMap_enableParcelsWms = source.setMap_enableParcelsWms;
+            dest.setMap_showLiveInNavigation = source.setMap_showLiveInNavigation;
+            dest.setMap_liveDefaultsApplied = source.setMap_liveDefaultsApplied;
             dest.setWindow_QuickABLocation = source.setWindow_QuickABLocation;
             dest.setWindow_gridSize = source.setWindow_gridSize;
             dest.setWindow_gridLocation = source.setWindow_gridLocation;

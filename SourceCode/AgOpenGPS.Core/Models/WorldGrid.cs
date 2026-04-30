@@ -17,6 +17,8 @@ namespace AgOpenGPS.Core
         private BingMapVisual _bingMapVisual;
         private Bitmap _floorBitmap;
         private GeoTexture2D _floorTexture;
+        private LiveTileMapOptions _liveTileMapOptions = new LiveTileMapOptions(false, LiveTileMapSource.OpenStreetMap, false);
+        private LiveTileMapVisual _liveTileMapVisual;
 
         //Y
         public double northingMax;
@@ -53,6 +55,24 @@ namespace AgOpenGPS.Core
         }
 
         public bool HasBingMap => BingMap != null;
+
+        public LocalPlane LocalPlane { private get; set; }
+
+        public LiveTileMapOptions LiveTileMapOptions
+        {
+            set
+            {
+                _liveTileMapOptions = value ?? new LiveTileMapOptions(false, LiveTileMapSource.OpenStreetMap, false);
+                if (_liveTileMapVisual == null)
+                {
+                    _liveTileMapVisual = new LiveTileMapVisual(_liveTileMapOptions);
+                }
+                else
+                {
+                    _liveTileMapVisual.UpdateOptions(_liveTileMapOptions);
+                }
+            }
+        }
 
         private GeoTexture2D FloorTexture
         {
@@ -91,7 +111,19 @@ namespace AgOpenGPS.Core
                 GeoCoord uCountvCount = new GeoCoord(eastingMax, northingMin);
                 FloorTexture.DrawRepeatedZ(u0v0, uCountvCount, -0.10, Count);
             }
+            _liveTileMapVisual?.Draw(LocalPlane, CurrentBoundingBox, cameraZoom);
             _bingMapVisual?.Draw();
+        }
+
+        private GeoBoundingBox CurrentBoundingBox
+        {
+            get
+            {
+                GeoBoundingBox geoBoundingBox = GeoBoundingBox.CreateEmpty();
+                geoBoundingBox.Include(new GeoCoord(northingMin, eastingMin));
+                geoBoundingBox.Include(new GeoCoord(northingMax, eastingMax));
+                return geoBoundingBox;
+            }
         }
 
         public void DrawWorldGrid(ColorRgba worldGridColor)
