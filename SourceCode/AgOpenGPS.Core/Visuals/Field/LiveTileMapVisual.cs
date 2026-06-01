@@ -43,9 +43,14 @@ namespace AgOpenGPS.Core.Visuals
         private bool _readyTileLogged;
         private bool _drawStartedLogged;
 
-        public LiveTileMapVisual(LiveTileMapOptions options)
+        private readonly TileDiskCache _diskCache;
+        private const long MaxDiskCacheBytes = 500L * 1024 * 1024; // 500 MB
+
+        public LiveTileMapVisual(LiveTileMapOptions options, string cacheDirectory)
         {
             _options = options;
+            _diskCache = new TileDiskCache(cacheDirectory);
+            _diskCache.EvictToLimit(MaxDiskCacheBytes);
         }
 
         public void UpdateOptions(LiveTileMapOptions options)
@@ -246,6 +251,14 @@ namespace AgOpenGPS.Core.Visuals
 
         private Bitmap DownloadTileBitmap(TileKey key)
         {
+            string sourceName = _options.Source.ToString();
+
+            byte[] cached = _diskCache.TryRead(sourceName, key.Zoom, key.X, key.Y, _options.WithParcelsOverlay);
+            if (cached != null)
+            {
+                return CreateBitmap(cached);
+            }
+
             TimeSpan baseTimeout = _options.Source == LiveTileMapSource.GeoportalOrtho
                 ? GeoportalTimeout : EsriOsmTimeout;
 
@@ -262,12 +275,15 @@ namespace AgOpenGPS.Core.Visuals
 
             if (!_options.WithParcelsOverlay)
             {
+                _diskCache.Write(sourceName, key.Zoom, key.X, key.Y, false, baseBytes);
                 return CreateBitmap(baseBytes);
             }
 
             byte[] overlayBytes = SafeDownloadImageBytes(BuildParcelsOverlayWmsUrl(key.Zoom, key.X, key.Y), key, "parcels", EsriOsmTimeout);
             if (overlayBytes == null)
             {
+                // still cache the base so the next pass is instant
+                _diskCache.Write(sourceName, key.Zoom, key.X, key.Y, false, baseBytes);
                 return CreateBitmap(baseBytes);
             }
 
@@ -279,6 +295,11 @@ namespace AgOpenGPS.Core.Visuals
                 {
                     graphics.DrawImage(baseBitmap, 0, 0, TileSize, TileSize);
                     graphics.DrawImage(overlayBitmap, 0, 0, TileSize, TileSize);
+                }
+                using (MemoryStream ms = new MemoryStream())
+                {
+                    merged.Save(ms, ImageFormat.Png);
+                    _diskCache.Write(sourceName, key.Zoom, key.X, key.Y, true, ms.ToArray());
                 }
                 return merged;
             }

@@ -801,6 +801,7 @@ namespace AgOpenGPS
                 sourceIndex = 2;
             }
 
+            worldGrid.TileCacheDirectory = System.IO.Path.Combine(RegistrySettings.baseDirectory, "TileCache");
             worldGrid.LiveTileMapOptions = new LiveTileMapOptions(
                 Settings.Default.setMap_showLiveInNavigation,
                 (LiveTileMapSource)sourceIndex,

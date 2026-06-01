@@ -58,6 +58,8 @@ namespace AgOpenGPS.Core
 
         public LocalPlane LocalPlane { private get; set; }
 
+        public string TileCacheDirectory { private get; set; }
+
         public LiveTileMapOptions LiveTileMapOptions
         {
             set
@@ -65,7 +67,7 @@ namespace AgOpenGPS.Core
                 _liveTileMapOptions = value ?? new LiveTileMapOptions(false, LiveTileMapSource.OpenStreetMap, false);
                 if (_liveTileMapVisual == null)
                 {
-                    _liveTileMapVisual = new LiveTileMapVisual(_liveTileMapOptions);
+                    _liveTileMapVisual = new LiveTileMapVisual(_liveTileMapOptions, TileCacheDirectory);
                 }
                 else
                 {
