@@ -31,6 +31,8 @@ namespace AgOpenGPS.Core.Visuals
         private static readonly HttpClient HttpClient = BuildHttpClient();
         private static readonly SemaphoreSlim DownloadSemaphore = new SemaphoreSlim(4);
         private static readonly TimeSpan FailedTileRetryDelay = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan EsriOsmTimeout = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan GeoportalTimeout = TimeSpan.FromSeconds(30);
 
         private readonly object _sync = new object();
         private readonly Dictionary<TileKey, TileEntry> _tiles = new Dictionary<TileKey, TileEntry>();
@@ -244,10 +246,13 @@ namespace AgOpenGPS.Core.Visuals
 
         private Bitmap DownloadTileBitmap(TileKey key)
         {
-            byte[] baseBytes = SafeDownloadImageBytes(BuildBaseTileUrl(key.Zoom, key.X, key.Y), key, "base");
+            TimeSpan baseTimeout = _options.Source == LiveTileMapSource.GeoportalOrtho
+                ? GeoportalTimeout : EsriOsmTimeout;
+
+            byte[] baseBytes = SafeDownloadImageBytes(BuildBaseTileUrl(key.Zoom, key.X, key.Y), key, "base", baseTimeout);
             if (baseBytes == null && _options.Source == LiveTileMapSource.GeoportalOrtho)
             {
-                baseBytes = SafeDownloadImageBytes(BuildEsriTileUrl(key.Zoom, key.X, key.Y), key, "esri fallback");
+                baseBytes = SafeDownloadImageBytes(BuildEsriTileUrl(key.Zoom, key.X, key.Y), key, "esri fallback", EsriOsmTimeout);
             }
 
             if (baseBytes == null)
@@ -260,7 +265,7 @@ namespace AgOpenGPS.Core.Visuals
                 return CreateBitmap(baseBytes);
             }
 
-            byte[] overlayBytes = SafeDownloadImageBytes(BuildParcelsOverlayWmsUrl(key.Zoom, key.X, key.Y), key, "parcels");
+            byte[] overlayBytes = SafeDownloadImageBytes(BuildParcelsOverlayWmsUrl(key.Zoom, key.X, key.Y), key, "parcels", EsriOsmTimeout);
             if (overlayBytes == null)
             {
                 return CreateBitmap(baseBytes);
@@ -279,11 +284,11 @@ namespace AgOpenGPS.Core.Visuals
             }
         }
 
-        private byte[] SafeDownloadImageBytes(string url, TileKey key, string layer)
+        private byte[] SafeDownloadImageBytes(string url, TileKey key, string layer, TimeSpan timeout)
         {
             try
             {
-                return DownloadImageBytes(url);
+                return DownloadImageBytes(url, timeout);
             }
             catch (Exception ex)
             {
@@ -327,9 +332,10 @@ namespace AgOpenGPS.Core.Visuals
             }
         }
 
-        private static byte[] DownloadImageBytes(string url)
+        private static byte[] DownloadImageBytes(string url, TimeSpan timeout)
         {
-            using (HttpResponseMessage response = HttpClient.GetAsync(url).GetAwaiter().GetResult())
+            using (var cts = new CancellationTokenSource(timeout))
+            using (HttpResponseMessage response = HttpClient.GetAsync(url, cts.Token).GetAwaiter().GetResult())
             {
                 if (!response.IsSuccessStatusCode)
                 {
@@ -455,7 +461,6 @@ namespace AgOpenGPS.Core.Visuals
         private static HttpClient BuildHttpClient()
         {
             HttpClient httpClient = new HttpClient();
-            httpClient.Timeout = TimeSpan.FromSeconds(10);
             httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("AgOpenGPS/1.0 (live-tile-client)");
             return httpClient;
         }
