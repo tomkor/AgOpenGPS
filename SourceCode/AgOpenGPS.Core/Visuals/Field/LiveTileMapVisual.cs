@@ -31,6 +31,8 @@ namespace AgOpenGPS.Core.Visuals
         private static readonly HttpClient HttpClient = BuildHttpClient();
         private static readonly SemaphoreSlim DownloadSemaphore = new SemaphoreSlim(4);
         private static readonly TimeSpan FailedTileRetryDelay = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan EsriOsmTimeout = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan GeoportalTimeout = TimeSpan.FromSeconds(30);
 
         private readonly object _sync = new object();
         private readonly Dictionary<TileKey, TileEntry> _tiles = new Dictionary<TileKey, TileEntry>();
@@ -41,10 +43,17 @@ namespace AgOpenGPS.Core.Visuals
         private bool _readyTileLogged;
         private bool _drawStartedLogged;
 
-        public LiveTileMapVisual(LiveTileMapOptions options)
+        private readonly TileDiskCache _diskCache;
+        private const long MaxDiskCacheBytes = 500L * 1024 * 1024; // 500 MB
+
+        public LiveTileMapVisual(LiveTileMapOptions options, string cacheDirectory)
         {
             _options = options;
+            _diskCache = new TileDiskCache(cacheDirectory);
+            _diskCache.EvictToLimit(MaxDiskCacheBytes);
         }
+
+        private bool UseFastFallback => _options.Source == LiveTileMapSource.GeoportalOrtho;
 
         public void UpdateOptions(LiveTileMapOptions options)
         {
@@ -98,28 +107,47 @@ namespace AgOpenGPS.Core.Visuals
             {
                 if (!_tiles.TryGetValue(key, out TileEntry entry))
                 {
-                    entry = new TileEntry { State = TileState.Pending };
+                    entry = new TileEntry
+                    {
+                        PrimaryState = TileState.Pending,
+                        FastState = UseFastFallback ? TileState.Pending : TileState.Disabled,
+                    };
                     _tiles[key] = entry;
                 }
 
-                bool shouldRetry = entry.State == TileState.Failed &&
-                    DateTime.UtcNow - entry.LastAttemptUtc >= FailedTileRetryDelay;
-                bool shouldQueue = entry.State == TileState.Pending || shouldRetry;
-                if (shouldQueue && queuedThisFrame < MaxTileLoadsQueuedPerFrame)
+                // Fast (ESRI) layer first so cells fill immediately.
+                if (entry.FastState != TileState.Disabled)
                 {
-                    QueueLoad(key, entry);
-                    queuedThisFrame++;
+                    TryQueueLayer(key, entry, true, ref queuedThisFrame);
                 }
+                TryQueueLayer(key, entry, false, ref queuedThisFrame);
 
                 entry.LastAccess = ++_accessCounter;
                 return entry;
             }
         }
 
-        private void QueueLoad(TileKey key, TileEntry entry)
+        // Must hold _sync.
+        private void TryQueueLayer(TileKey key, TileEntry entry, bool isFast, ref int queuedThisFrame)
         {
-            entry.State = TileState.Loading;
-            entry.LastAttemptUtc = DateTime.UtcNow;
+            TileState state = isFast ? entry.FastState : entry.PrimaryState;
+            DateTime lastAttempt = isFast ? entry.FastLastAttemptUtc : entry.PrimaryLastAttemptUtc;
+
+            bool shouldRetry = state == TileState.Failed &&
+                DateTime.UtcNow - lastAttempt >= FailedTileRetryDelay;
+            bool shouldQueue = state == TileState.Pending || shouldRetry;
+            if (shouldQueue && queuedThisFrame < MaxTileLoadsQueuedPerFrame)
+            {
+                QueueLoad(key, entry, isFast);
+                queuedThisFrame++;
+            }
+        }
+
+        private void QueueLoad(TileKey key, TileEntry entry, bool isFast)
+        {
+            if (isFast) { entry.FastState = TileState.Loading; entry.FastLastAttemptUtc = DateTime.UtcNow; }
+            else { entry.PrimaryState = TileState.Loading; entry.PrimaryLastAttemptUtc = DateTime.UtcNow; }
+
             Task.Run(() =>
             {
                 Bitmap bitmap = null;
@@ -129,7 +157,7 @@ namespace AgOpenGPS.Core.Visuals
                     DownloadSemaphore.Wait();
                     try
                     {
-                        bitmap = DownloadTileBitmap(key);
+                        bitmap = isFast ? DownloadFastBitmap(key) : DownloadTileBitmap(key);
                     }
                     finally
                     {
@@ -147,13 +175,14 @@ namespace AgOpenGPS.Core.Visuals
                 {
                     if (bitmap == null)
                     {
-                        entry.State = TileState.Failed;
-                        LogTileFailure(key, downloadException, "tile");
+                        if (isFast) entry.FastState = TileState.Failed;
+                        else entry.PrimaryState = TileState.Failed;
+                        LogTileFailure(key, downloadException, isFast ? "fast" : "tile");
                         return;
                     }
 
-                    entry.Bitmap = bitmap;
-                    entry.State = TileState.Ready;
+                    if (isFast) { entry.FastBitmap = bitmap; entry.FastState = TileState.Ready; }
+                    else { entry.PrimaryBitmap = bitmap; entry.PrimaryState = TileState.Ready; }
                     LogReadyTileOnce(key);
                 }
             });
@@ -161,26 +190,30 @@ namespace AgOpenGPS.Core.Visuals
 
         private void DrawTileIfReady(LocalPlane localPlane, TileKey key, TileEntry entry)
         {
-            Bitmap bitmap;
+            Bitmap drawBitmap = null;
+            bool drawPrimary;
+
             lock (_sync)
             {
-                if (entry.State != TileState.Ready)
+                if (entry.PrimaryState == TileState.Ready)
+                {
+                    if (entry.PrimaryTexture == null) entry.PrimaryTexture = new GeoTexture2D(entry.PrimaryBitmap);
+                    drawBitmap = entry.PrimaryBitmap;
+                    drawPrimary = true;
+                }
+                else if (entry.FastState == TileState.Ready)
+                {
+                    if (entry.FastTexture == null) entry.FastTexture = new GeoTexture2D(entry.FastBitmap);
+                    drawBitmap = entry.FastBitmap;
+                    drawPrimary = false;
+                }
+                else
                 {
                     return;
                 }
-
-                if (entry.Texture == null)
-                {
-                    entry.Texture = new GeoTexture2D(entry.Bitmap);
-                }
-
-                bitmap = entry.Bitmap;
             }
 
-            if (bitmap == null)
-            {
-                return;
-            }
+            if (drawBitmap == null) return;
 
             TileBounds bounds = GetTileBounds(key.Zoom, key.X, key.Y);
             GeoCoord topLeft = localPlane.ConvertWgs84ToGeoCoord(new Wgs84(bounds.LatTop, bounds.LonLeft));
@@ -190,7 +223,8 @@ namespace AgOpenGPS.Core.Visuals
 
             lock (_sync)
             {
-                entry.Texture?.DrawZ(u0v0Map, u1v1Map, -0.09);
+                if (drawPrimary) entry.PrimaryTexture?.DrawZ(u0v0Map, u1v1Map, -0.09);
+                else entry.FastTexture?.DrawZ(u0v0Map, u1v1Map, -0.095);
             }
         }
 
@@ -204,7 +238,8 @@ namespace AgOpenGPS.Core.Visuals
                 }
 
                 List<TileKey> keysToRemove = _tiles
-                    .Where(pair => pair.Value.State != TileState.Loading)
+                    .Where(pair => pair.Value.PrimaryState != TileState.Loading &&
+                                   pair.Value.FastState != TileState.Loading)
                     .OrderBy(pair => pair.Value.LastAccess)
                     .Take(_tiles.Count - MaxCachedTiles)
                     .Select(pair => pair.Key)
@@ -237,17 +272,49 @@ namespace AgOpenGPS.Core.Visuals
 
             foreach (TileEntry entry in toDispose)
             {
-                entry.Texture?.Dispose();
-                entry.Bitmap?.Dispose();
+                entry.PrimaryTexture?.Dispose();
+                entry.PrimaryBitmap?.Dispose();
+                entry.FastTexture?.Dispose();
+                entry.FastBitmap?.Dispose();
             }
+        }
+
+        private Bitmap DownloadFastBitmap(TileKey key)
+        {
+            const string fastSource = "EsriWorldImagery";
+            byte[] cached = _diskCache.TryRead(fastSource, key.Zoom, key.X, key.Y, false);
+            if (cached != null)
+            {
+                return CreateBitmap(cached);
+            }
+
+            byte[] bytes = SafeDownloadImageBytes(BuildEsriTileUrl(key.Zoom, key.X, key.Y), key, "fast", EsriOsmTimeout);
+            if (bytes == null)
+            {
+                return null;
+            }
+
+            _diskCache.Write(fastSource, key.Zoom, key.X, key.Y, false, bytes);
+            return CreateBitmap(bytes);
         }
 
         private Bitmap DownloadTileBitmap(TileKey key)
         {
-            byte[] baseBytes = SafeDownloadImageBytes(BuildBaseTileUrl(key.Zoom, key.X, key.Y), key, "base");
+            string sourceName = _options.Source.ToString();
+
+            byte[] cached = _diskCache.TryRead(sourceName, key.Zoom, key.X, key.Y, _options.WithParcelsOverlay);
+            if (cached != null)
+            {
+                return CreateBitmap(cached);
+            }
+
+            TimeSpan baseTimeout = _options.Source == LiveTileMapSource.GeoportalOrtho
+                ? GeoportalTimeout : EsriOsmTimeout;
+
+            byte[] baseBytes = SafeDownloadImageBytes(BuildBaseTileUrl(key.Zoom, key.X, key.Y), key, "base", baseTimeout);
             if (baseBytes == null && _options.Source == LiveTileMapSource.GeoportalOrtho)
             {
-                baseBytes = SafeDownloadImageBytes(BuildEsriTileUrl(key.Zoom, key.X, key.Y), key, "esri fallback");
+                baseBytes = SafeDownloadImageBytes(BuildEsriTileUrl(key.Zoom, key.X, key.Y), key, "esri fallback", EsriOsmTimeout);
             }
 
             if (baseBytes == null)
@@ -257,12 +324,15 @@ namespace AgOpenGPS.Core.Visuals
 
             if (!_options.WithParcelsOverlay)
             {
+                _diskCache.Write(sourceName, key.Zoom, key.X, key.Y, false, baseBytes);
                 return CreateBitmap(baseBytes);
             }
 
-            byte[] overlayBytes = SafeDownloadImageBytes(BuildParcelsOverlayWmsUrl(key.Zoom, key.X, key.Y), key, "parcels");
+            byte[] overlayBytes = SafeDownloadImageBytes(BuildParcelsOverlayWmsUrl(key.Zoom, key.X, key.Y), key, "parcels", EsriOsmTimeout);
             if (overlayBytes == null)
             {
+                // still cache the base so the next pass is instant
+                _diskCache.Write(sourceName, key.Zoom, key.X, key.Y, false, baseBytes);
                 return CreateBitmap(baseBytes);
             }
 
@@ -275,15 +345,20 @@ namespace AgOpenGPS.Core.Visuals
                     graphics.DrawImage(baseBitmap, 0, 0, TileSize, TileSize);
                     graphics.DrawImage(overlayBitmap, 0, 0, TileSize, TileSize);
                 }
+                using (MemoryStream ms = new MemoryStream())
+                {
+                    merged.Save(ms, ImageFormat.Png);
+                    _diskCache.Write(sourceName, key.Zoom, key.X, key.Y, true, ms.ToArray());
+                }
                 return merged;
             }
         }
 
-        private byte[] SafeDownloadImageBytes(string url, TileKey key, string layer)
+        private byte[] SafeDownloadImageBytes(string url, TileKey key, string layer, TimeSpan timeout)
         {
             try
             {
-                return DownloadImageBytes(url);
+                return DownloadImageBytes(url, timeout);
             }
             catch (Exception ex)
             {
@@ -327,9 +402,10 @@ namespace AgOpenGPS.Core.Visuals
             }
         }
 
-        private static byte[] DownloadImageBytes(string url)
+        private static byte[] DownloadImageBytes(string url, TimeSpan timeout)
         {
-            using (HttpResponseMessage response = HttpClient.GetAsync(url).GetAwaiter().GetResult())
+            using (var cts = new CancellationTokenSource(timeout))
+            using (HttpResponseMessage response = HttpClient.GetAsync(url, cts.Token).GetAwaiter().GetResult())
             {
                 if (!response.IsSuccessStatusCode)
                 {
@@ -455,7 +531,6 @@ namespace AgOpenGPS.Core.Visuals
         private static HttpClient BuildHttpClient()
         {
             HttpClient httpClient = new HttpClient();
-            httpClient.Timeout = TimeSpan.FromSeconds(10);
             httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("AgOpenGPS/1.0 (live-tile-client)");
             return httpClient;
         }
@@ -599,11 +674,17 @@ namespace AgOpenGPS.Core.Visuals
 
         private class TileEntry
         {
-            public TileState State { get; set; }
-            public Bitmap Bitmap { get; set; }
-            public GeoTexture2D Texture { get; set; }
+            public TileState PrimaryState { get; set; }
+            public Bitmap PrimaryBitmap { get; set; }
+            public GeoTexture2D PrimaryTexture { get; set; }
+
+            public TileState FastState { get; set; }
+            public Bitmap FastBitmap { get; set; }
+            public GeoTexture2D FastTexture { get; set; }
+
             public long LastAccess { get; set; }
-            public DateTime LastAttemptUtc { get; set; }
+            public DateTime PrimaryLastAttemptUtc { get; set; }
+            public DateTime FastLastAttemptUtc { get; set; }
         }
 
         private enum TileState
@@ -612,6 +693,7 @@ namespace AgOpenGPS.Core.Visuals
             Loading,
             Ready,
             Failed,
+            Disabled,
         }
 
         private struct WgsBounds
